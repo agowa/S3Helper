@@ -45,7 +45,7 @@ function Calculate-BlockSize($filePath, $ETag) {
 }
 
 function Get-MD5HashList($filePath, $blockSize, [switch]$UseSequentialAccess) {
-    [byte[]] $binHash = @()
+    [Collections.Generic.List[byte]]$binHash = @()
     [int]$chunks = 0
 
     try {
@@ -72,14 +72,26 @@ function Get-MD5HashList($filePath, $blockSize, [switch]$UseSequentialAccess) {
                 [int]$threadNr
             )
             [int]$threadChunks = 0
-            [byte[]] $threadBinHash = @()
+            [Collections.Generic.List[byte]]$threadBinHash = @()
             try {
                 $md5 = [System.Security.Cryptography.MD5CryptoServiceProvider]::new()
                 $threadReader = [System.IO.File]::OpenRead($filePath)
+                [long]$fileSize = $threadReader.Length
                 $threadBuf = [byte[]]::new($chunkSize)
 
                 $threadReaderStartPosition = [bigint]::Multiply($threadNr, $chunkSize)
                 $threadReaderEndPosition = [bigint]::Subtract([bigint]::Multiply($threadNr + 1, $chunkSize), 1)
+                # Remember, chunkSize is slightly larger than the exact fraction
+                # as we rounded it to the next integer using [System.Math]::Ceiling
+                # e.g. $fileSize ≤ $chunkSize*($threadNr + 1) - 1
+                # Therefore we have to make sure, that we do not overshoot the file
+                # or we'll endlessly try to read parts of the file that do not exist.
+                # So when the file is larger we'll just set $threadREaderEndPosition
+                # to the actual fileSize.
+                if ($threadReaderEndPosition -gt $fileSize) {
+                    $threadReaderEndPosition = $fileSize - 1
+                }
+
                 $null = $threadReader.Seek($threadReaderStartPosition, [System.IO.SeekOrigin]::Begin)
 
                 while ($threadReader.Position -le $threadReaderEndPosition) {
@@ -108,12 +120,12 @@ function Get-MD5HashList($filePath, $blockSize, [switch]$UseSequentialAccess) {
             }
         }
         while ($jobs.asyncresult.IsCompleted -contains $false) {
+                $jobs.foreach{'Thread {0} isCompleted: {1}' -f $_.threadNr, $_.asyncresult.IsCompleted } | Write-Debug
 	        Start-Sleep -Milliseconds 100
         }
         foreach($job in $jobs) {
             [long]$threadChunks, [byte[]]$threadBinHash = $job.PowerShell.EndInvoke($job.asyncResult)
             $chunks += $threadChunks
-            #[System.Array]::Copy($threadBinHash, 0, $binHash, $binHash.Length, $threadBinHash.Length)
             $binHash += $threadBinHash
             $job.PowerShell.Dispose()
         }
@@ -136,7 +148,7 @@ function Get-ETag($filePath, $blockSize = [bigint]::Pow(2, 24), [Switch]$UseSequ
     } else {
         #$Global:DbgBinHash = $binHash
         #[System.BitConverter]::ToString( $DbgBinHash[0..15] ).Replace('-','').ToLower()
-        
+
         # Hash the hash list.
         $md5 = [System.Security.Cryptography.MD5CryptoServiceProvider]::new()
         $binHash = $md5.ComputeHash( $binHash )
