@@ -64,6 +64,8 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
         if ($blockCount -lt $maxThreads) {
             $maxThreads = $blockCount
         }
+        # TODO: FIXME: Fix slicing, currently the calculation is broken, because we do the slicing wrong.
+        # ChunkSize needs to be a multiple of $blockSize
         $chunkSize = [bigint]([System.Math]::Ceiling([double]$filesize / [double]$maxThreads))
 
         # Thread
