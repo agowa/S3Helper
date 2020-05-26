@@ -50,6 +50,10 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
 
     try {
         [System.IO.FileStream]$reader = [System.IO.File]::OpenRead($filePath)
+        $runspacePool = [RunspaceFactory]::CreateRunspacePool(1, $maxThreads)
+        $runspacePool.Open()
+        [Object[]]$jobs = @()
+
         [long]$fileSize = $reader.Length
         [bigint]$blockCount = [System.Math]::Ceiling([double]$filesize / [double]$blockSize)
         if ($UseSequentialAccess -or -not $reader.CanSeek) {
@@ -108,9 +112,6 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
             return $threadChunks, $threadBinHash
         }
 
-        $runspacePool = [RunspaceFactory]::CreateRunspacePool(1, $maxThreads)
-        $runspacePool.Open()
-        [Object[]]$jobs = @()
         0..($maxThreads - 1) | ForEach-Object {
             $powerShell = [powershell]::Create()
             $powerShell.RunspacePool = $runspacePool
@@ -139,6 +140,8 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
     } finally {
         $reader.Close()
         $reader.Dispose()
+        $runspacePool.Close()
+        $runspacePool.Dispose()
     }
     if ($blockCount -ne $chunks) {
         "Invalid block count expected $blockCount got $chunks" | Write-Error
