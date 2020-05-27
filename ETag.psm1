@@ -64,18 +64,22 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
         if ($blockCount -lt $maxThreads) {
             $maxThreads = $blockCount
         }
-        # TODO: FIXME: Fix slicing, currently the calculation is broken, because we do the slicing wrong.
-        # ChunkSize needs to be a multiple of $blockSize
-        $chunkSize = [bigint]([System.Math]::Ceiling([double]$filesize / [double]$maxThreads))
+
+        # This is a few blocks short. The last thread will handle them.
+        #TODO: Optiomize scheduling
+        $blocksPerThread = [bigint]::Divide($blockCount, $maxThreads)
 
         # Thread
         $threadScriptBlock = {
             param(
                 [String]$filePath,
-                [bigint]$chunkSize,
+                [bigint]$blocksPerThread,
                 [bigint]$blockSize,
-                [int]$threadNr
+                [int]$threadNr,
+                # If we're the last thread, continue until the end of the file.
+                [switch]$isLastThread
             )
+            [bigint]$chunkSize = [bigint]::Multiply($blocksPerThread, $blockSize)
             [int]$threadChunks = 0
             [byte[]]$threadBinHash = @()
             [String[]]$log = @()
@@ -94,7 +98,7 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
                 # or we'll endlessly try to read parts of the file that do not exist.
                 # So when the file is larger we'll just set $threadREaderEndPosition
                 # to the actual fileSize.
-                if ($threadReaderEndPosition -gt $fileSize) {
+                if ($isLastThread -or ($threadReaderEndPosition -gt $fileSize)) {
                     $threadReaderEndPosition = $fileSize - 1
                 }
 
@@ -117,8 +121,8 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
         0..($maxThreads - 1) | ForEach-Object {
             $powerShell = [powershell]::Create()
             $powerShell.RunspacePool = $runspacePool
-            $null = $powerShell.AddScript($threadScriptBlock).AddArgument($filePath).AddArgument($chunkSize).AddArgument($blockSize).AddArgument($_)
-            'Thread {0} started with ChunkSize {1}, BlockSize {2}' -f $_, $chunkSize, $blockSize | Write-Debug
+            $null = $powerShell.AddScript($threadScriptBlock).AddArgument($filePath).AddArgument($blocksPerThread).AddArgument($blockSize).AddArgument($_)
+            'Thread {0} started with blocksPerThread {1}, BlockSize {2}' -f $_, $blocksPerThread, $blockSize | Write-Debug
             $jobs += New-Object -TypeName psobject -Property @{
                 threadNr    = $_
                 PowerShell  = $powerShell
@@ -152,7 +156,7 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
 }
 
 
-function Get-ETag($filePath, $blockSize, [int]$maxThreads, [Switch]$UseSequentialAccess) {
+function Get-ETag($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$maxThreads = [System.Environment]::ProcessorCount - 1, [Switch]$UseSequentialAccess) {
     # blockSize is in bytes (e.g. 2^24 bytes == 16 MiB)
     [long]$chunks, [byte[]]$binHash = Get-MD5HashList -filePath $filePath -blockSize:$blockSize -UseSequentialAccess:$UseSequentialAccess -maxThreads:$maxThreads
 
