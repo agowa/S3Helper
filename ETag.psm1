@@ -87,10 +87,10 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
                 $md5 = [System.Security.Cryptography.MD5CryptoServiceProvider]::new()
                 $threadReader = [System.IO.File]::OpenRead($filePath)
                 [long]$fileSize = $threadReader.Length
-                $threadBuf = [byte[]]::new($chunkSize)
+                $threadBuf = [byte[]]::new($blockSize)
 
                 $threadReaderStartPosition = [bigint]::Multiply($threadNr, $chunkSize)
-                $threadReaderEndPosition = [bigint]::Subtract([bigint]::Multiply($threadNr + 1, $chunkSize), 1)
+                $threadReaderEndPosition = $threadReaderStartPosition + $chunkSize - [bigint]::new(1)
                 # Remember, chunkSize is slightly larger than the exact fraction
                 # as we rounded it to the next integer using [System.Math]::Ceiling
                 # e.g. $fileSize ≤ $chunkSize*($threadNr + 1) - 1
