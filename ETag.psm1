@@ -179,7 +179,7 @@ function Get-ETag($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$maxThreads
 
 function Test-ETag($filePath, $ETag) {
     $blockSize = Get-BlockSizeFromETag -filePath $filePath -ETag $ETag
-    $fileETag = Get-ETagPerBlock -filePath $filePath -blockSize $blockSize
+    $fileETag = Get-ETag -filePath $filePath -blockSize $blockSize
     return $fileETag.Equals($ETag)
 }
 
