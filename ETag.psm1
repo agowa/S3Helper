@@ -111,6 +111,7 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
                     $threadChunks += 1
                     $threadBinHash += $md5.ComputeHash($threadBuf, 0, $read_len)
                 }
+                $log += "Done reading until {0} of {1} with filesize of {2} and we're LastThread {3}" -f $threadReader.Position, $threadReaderEndPosition, $fileSize, $isLastThread
             } finally {
                 $threadReader.Close()
                 $threadReader.Dispose()
@@ -123,6 +124,9 @@ function Get-MD5HashList($filePath, $blockSize = [bigint]::Pow(2, 24), [int]$max
             $powerShell.RunspacePool = $runspacePool
             $null = $powerShell.AddScript($threadScriptBlock).AddArgument($filePath).AddArgument($blocksPerThread).AddArgument($blockSize).AddArgument($_)
             'Thread {0} started with blocksPerThread {1}, BlockSize {2}' -f $_, $blocksPerThread, $blockSize | Write-Debug
+            if ($maxThreads - 1 -eq $_) {
+                $null = $powerShell.AddParameter("isLastThread")
+            }
             $jobs += New-Object -TypeName psobject -Property @{
                 threadNr    = $_
                 PowerShell  = $powerShell
